@@ -1,0 +1,10 @@
+coqui-tts
+trainer
+torch
+torchaudio
+faster-whisper
+yt-dlp
+pydub
+deepfilternet
+pyyaml
+flask

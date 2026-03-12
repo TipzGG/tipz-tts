@@ -1,0 +1,16 @@
+{
+  "voice": { "name": "Beer School", "language": "pt" },
+  "workspace_dir": "outputs/beerschool",
+  "sources": [
+    {
+      "url": "https://www.youtube.com/watch?v=WFcFy3ByMqw"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=_rOtmW1ObNA"
+    },
+    {
+      "url": "https://www.youtube.com/watch?v=YgRnFiAK4Ec"
+    }
+  ],
+  "train": { "enabled": false, "max_audio_seconds": 11 }
+}

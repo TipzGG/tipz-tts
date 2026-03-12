@@ -1,0 +1,30 @@
+{
+	"voices": [
+		{
+			"voice_model": "silvio",
+			"display_name": "Silvio",
+			"language_default": "pt-BR",
+			"config_path": "/abs/path/to/silvio/config.json",
+			"tokenizer_path": "/abs/path/to/xtts/vocab.json",
+			"xtts_checkpoint": "/abs/path/to/silvio/best_model.pth",
+			"speaker_reference": "/abs/path/to/silvio/reference.wav",
+			"temperature_default": 0.8,
+			"speed_default": 0.97,
+			"status": "enabled",
+			"updated_at": "2026-03-12T00:00:00Z"
+		},
+		{
+			"voice_model": "lula_legacy",
+			"display_name": "Lula (Legacy)",
+			"language_default": "pt-BR",
+			"config_path": "/abs/path/to/lula/config.json",
+			"tokenizer_path": "/abs/path/to/xtts/vocab.json",
+			"xtts_checkpoint": "/abs/path/to/lula/best_model.pth",
+			"speaker_reference": "/abs/path/to/lula/reference.wav",
+			"temperature_default": 0.8,
+			"speed_default": 0.97,
+			"status": "disabled",
+			"updated_at": "2026-03-12T00:00:00Z"
+		}
+	]
+}

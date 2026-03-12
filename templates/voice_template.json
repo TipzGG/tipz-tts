@@ -1,0 +1,36 @@
+{
+	"voice": {
+		"name": "silvio",
+		"language": "pt"
+	},
+	"workspace_dir": "outputs/silvio",
+	"sources": [
+		{
+			"url": "https://www.youtube.com/watch?v=VIDEO_ID_1",
+			"filename": "silvio_001",
+			"trim_start": 10,
+			"trim_end": 120
+		},
+		{
+			"url": "https://www.youtube.com/watch?v=VIDEO_ID_2",
+			"filename": "silvio_002",
+			"trim_start": 0,
+			"trim_end": 0
+		}
+	],
+	"dataset": {
+		"output_dir": "outputs/silvio/dataset",
+		"val_split": 0.15,
+		"buffer_seconds": 0.2,
+		"whisper_model": "large-v2",
+		"compute_type": "float32"
+	},
+	"train": {
+		"enabled": false,
+		"output_dir": "out",
+		"num_epochs": 10,
+		"batch_size": 4,
+		"grad_acumm": 1,
+		"max_audio_seconds": 11
+	}
+}

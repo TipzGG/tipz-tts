@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtualenv
+.venv/
+.venv311
+coqui_tts_env/
+
+# Local env
+.env
+
+# OS
+.DS_Store
+
+# Generated project data
+output/
+out/
+outputs/
+sources/
+
+# Local voice registry with real paths
+config/voices.json
