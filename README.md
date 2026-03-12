@@ -20,6 +20,12 @@ Projeto com treino/pipeline offline via `cli.py` e API HTTP online apenas para s
 source .venv/bin/activate
 ```
 
+Dependencias de sistema (obrigatorio para audio/video local com `pydub`):
+
+```bash
+brew install ffmpeg
+```
+
 Ou:
 
 ```bash
