@@ -61,6 +61,12 @@ def _resolve_audio_path(metadata_csv: str, audio_file: str) -> str:
     return str((Path(metadata_csv).resolve().parent / audio_file).resolve())
 
 
+def _progress_prefix(current: int, total: int) -> str:
+    total = max(total, 1)
+    percent = int((current / total) * 100)
+    return f"[{percent:>3}% {current}/{total}]"
+
+
 def _merge_timing_ranges(ranges: list[tuple[int, int]], gap_ms: int) -> list[tuple[int, int]]:
     if not ranges:
         return []
@@ -511,18 +517,29 @@ def build_dataset(
     pre_asr_chunks_dir = os.path.join(output_dir, "_pre_asr_chunks")
     os.makedirs(pre_asr_chunks_dir, exist_ok=True)
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    print(
+        "[dataset] starting build "
+        f"base_dataset={base_dataset} output_dir={output_dir} whisper_model={whisper_model_size} "
+        f"device={device} compute_type={compute_type}"
+    )
     asr_model = WhisperModel(whisper_model_size, device=device, compute_type=compute_type)
 
     metadata = {"audio_file": [], "text": [], "speaker_name": []}
 
     with open(base_dataset, mode="r", newline="") as archive:
         reader = csv.reader(archive, delimiter=",")
-        for line_number, line in enumerate(reader):
+        source_lines = list(reader)
+        print(f"[dataset] loaded {len(source_lines)} source row(s) from {base_dataset}")
+        for line_number, line in enumerate(source_lines, start=1):
             if len(line) != 3:
                 print(f"Skipping invalid line {line_number}: {line}")
                 continue
 
             audio_path, speaker_name, lang = [item.strip() for item in line]
+            print(
+                f"[dataset] {_progress_prefix(line_number, len(source_lines))} "
+                f"audio={audio_path} speaker={speaker_name} lang={lang}"
+            )
             pre_asr_chunk_files = _prepare_pre_asr_chunks(
                 audio_path=audio_path,
                 chunks_dir=os.path.join(pre_asr_chunks_dir, Path(audio_path).stem),
@@ -533,10 +550,19 @@ def build_dataset(
                 keep_silence_ms=pre_asr_keep_silence_ms,
                 merge_gap_ms=pre_asr_merge_gap_ms,
             )
+            print(
+                f"[dataset] source {line_number} planned {len(pre_asr_chunk_files)} pre-asr chunk(s) "
+                f"max_chunk={pre_asr_max_chunk_seconds}s min_silence={pre_asr_min_silence_ms}ms"
+            )
 
             chunk_index = 0
             audio_file_name, _ = os.path.splitext(os.path.basename(audio_path))
-            for pre_asr_chunk_file in pre_asr_chunk_files:
+            for pre_chunk_number, pre_asr_chunk_file in enumerate(pre_asr_chunk_files, start=1):
+                print(
+                    f"[asr] source={_progress_prefix(line_number, len(source_lines))} "
+                    f"chunk={_progress_prefix(pre_chunk_number, len(pre_asr_chunk_files))} "
+                    f"file={pre_asr_chunk_file}"
+                )
                 wav, sample_rate = torchaudio.load(pre_asr_chunk_file)
 
                 if wav.size(0) != 1:
@@ -546,7 +572,9 @@ def build_dataset(
                 segments, _ = asr_model.transcribe(pre_asr_chunk_file, word_timestamps=True, language=lang)
                 words = _iter_words(list(segments))
                 if not words:
+                    print(f"[asr] chunk {pre_chunk_number} produced 0 words, skipping")
                     continue
+                print(f"[asr] chunk {pre_chunk_number} produced {len(words)} word timestamp(s)")
 
                 sentence_parts = []
                 sentence_start = 0.0
@@ -657,6 +685,7 @@ def build_dataset(
                         chunk_index = next_chunk_index
 
             clear_gpu_cache(torch)
+            print(f"[dataset] finished source {line_number}, dataset rows so far={len(metadata['audio_file'])}")
 
     dataframe = pandas.DataFrame(metadata)
     if dataframe.empty:
@@ -673,6 +702,10 @@ def build_dataset(
 
     train_dataframe.to_csv(train_metadata_path, sep="|", index=False)
     eval_dataframe.to_csv(eval_metadata_path, sep="|", index=False)
+    print(
+        f"[dataset] wrote train_rows={len(train_dataframe)} eval_rows={len(eval_dataframe)} "
+        f"train_csv={train_metadata_path} eval_csv={eval_metadata_path}"
+    )
 
     del asr_model, train_dataframe, eval_dataframe, dataframe, metadata
     gc.collect()

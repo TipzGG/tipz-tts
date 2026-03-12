@@ -53,6 +53,12 @@ def _write_json_file(path: Path, payload: Any) -> None:
         json.dump(payload, file, ensure_ascii=True, indent=2)
 
 
+def _progress_prefix(current: int, total: int) -> str:
+    total = max(total, 1)
+    percent = int((current / total) * 100)
+    return f"[{percent:>3}% {current}/{total}]"
+
+
 def download_sources(config: dict, workspace_dir: Path) -> Path:
     voice_name = config["voice"]["name"]
     language = config["voice"].get("language", "pt")
@@ -71,6 +77,7 @@ def download_sources(config: dict, workspace_dir: Path) -> Path:
 
     csv_path = workspace_dir / "data.csv"
     rows = []
+    print(f"[download] preparing {len(sources)} source(s) into {raw_dir}")
 
     for index, source in enumerate(sources, start=1):
         url = source.get("url")
@@ -83,18 +90,22 @@ def download_sources(config: dict, workspace_dir: Path) -> Path:
         cache_key = source.get("cache_key") or _source_cache_key(url)
         force_download = bool(source.get("force_download", False) or config.get("force_download", False))
         final_wav_path = str(raw_dir / f"{filename}.wav")
+        print(f"[download] {_progress_prefix(index, len(sources))} filename={filename} cache_key={cache_key}")
 
         cached_source = manifest_index.get(cache_key, {})
         cached_wav_path = str(cached_source.get("final_wav_path", "")).strip()
         if not force_download and cached_wav_path and os.path.exists(cached_wav_path):
             final_wav_path = cached_wav_path
+            print(f"[download] reusing cached wav: {final_wav_path}")
         elif not force_download and os.path.exists(final_wav_path):
-            pass
+            print(f"[download] reusing existing wav: {final_wav_path}")
         else:
+            print(f"[download] downloading from youtube: {url}")
             mp3_file = download_youtube_video_to_mp3(url, str(raw_dir))
             if not mp3_file:
                 raise RuntimeError(f"Failed to download source #{index}: {url}")
 
+            print(f"[download] converting/enhancing source {index}: {mp3_file}")
             converted = convert_mp3_to_wav(mp3_file, str(raw_dir), filename)
             if not converted:
                 raise RuntimeError(f"Failed to convert source #{index}: {url}")
@@ -106,9 +117,11 @@ def download_sources(config: dict, workspace_dir: Path) -> Path:
                 if not trimmed:
                     raise RuntimeError(f"Failed to trim source #{index}: {url}")
                 final_wav_path = trimmed
+                print(f"[download] trimmed wav ready: {final_wav_path}")
             else:
                 os.rename(enhanced_wav_path, generated_final_wav_path)
                 final_wav_path = generated_final_wav_path
+                print(f"[download] wav ready: {final_wav_path}")
 
         manifest_index[cache_key] = {
             "cache_key": cache_key,
@@ -128,6 +141,8 @@ def download_sources(config: dict, workspace_dir: Path) -> Path:
         sources_manifest_path,
         {"sources": [manifest_index[key] for key in sorted(manifest_index.keys())]},
     )
+    print(f"[download] source manifest updated: {sources_manifest_path}")
+    print(f"[download] source csv ready: {csv_path}")
 
     return csv_path
 
@@ -144,11 +159,14 @@ def run_pipeline(config_path: Path) -> None:
     workspace = config.get("workspace_dir") or f"outputs/{slugify(voice_name)}"
     workspace_dir = Path(workspace).resolve()
     workspace_dir.mkdir(parents=True, exist_ok=True)
+    print(f"[pipeline] voice={voice_name} language={language} workspace={workspace_dir}")
+    print(f"[pipeline] config={config_path}")
 
     source_csv = download_sources(config, workspace_dir)
 
     dataset_cfg = config.get("dataset", {})
     dataset_output_dir = Path(dataset_cfg.get("output_dir", str(workspace_dir / "dataset"))).resolve()
+    print(f"[pipeline] building dataset into {dataset_output_dir}")
 
     train_csv, eval_csv = build_dataset(
         base_dataset=str(source_csv),
@@ -175,6 +193,7 @@ def run_pipeline(config_path: Path) -> None:
     auto_curate_enabled = bool(auto_cfg.get("enabled", True))
     auto_outputs = None
     if auto_curate_enabled:
+        print(f"[pipeline] auto-curating dataset with policy={auto_cfg.get('policy', 'strict')}")
         auto_outputs = auto_curate_dataset_splits(
             train_csv=train_csv,
             eval_csv=eval_csv,
@@ -203,6 +222,7 @@ def run_pipeline(config_path: Path) -> None:
     if auto_outputs and bool(train_cfg.get("use_auto_dataset", True)):
         selected_train_csv = auto_outputs["train_auto_csv"]
         selected_eval_csv = auto_outputs["eval_auto_csv"]
+        print(f"[pipeline] using auto-curated dataset for training: {selected_train_csv} / {selected_eval_csv}")
 
     train_gpt(
         language=language,
