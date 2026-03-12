@@ -1,4 +1,5 @@
 import csv
+import hashlib
 import json
 import os
 import re
@@ -35,6 +36,23 @@ def load_config(path: Path) -> Dict[str, Any]:
     return config
 
 
+def _source_cache_key(url: str) -> str:
+    return hashlib.sha1(url.encode("utf-8")).hexdigest()[:10]
+
+
+def _load_json_file(path: Path, default: Any) -> Any:
+    if not path.exists():
+        return default
+    with path.open("r", encoding="utf-8") as file:
+        return json.load(file)
+
+
+def _write_json_file(path: Path, payload: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as file:
+        json.dump(payload, file, ensure_ascii=True, indent=2)
+
+
 def download_sources(config: dict, workspace_dir: Path) -> Path:
     voice_name = config["voice"]["name"]
     language = config["voice"].get("language", "pt")
@@ -45,6 +63,11 @@ def download_sources(config: dict, workspace_dir: Path) -> Path:
 
     raw_dir = workspace_dir / "raw"
     raw_dir.mkdir(parents=True, exist_ok=True)
+    manifests_dir = workspace_dir / "manifests"
+    manifests_dir.mkdir(parents=True, exist_ok=True)
+    sources_manifest_path = manifests_dir / "sources.json"
+    sources_manifest = _load_json_file(sources_manifest_path, {"sources": []})
+    manifest_index = {item.get("cache_key"): item for item in sources_manifest.get("sources", []) if item.get("cache_key")}
 
     csv_path = workspace_dir / "data.csv"
     rows = []
@@ -57,28 +80,54 @@ def download_sources(config: dict, workspace_dir: Path) -> Path:
         filename = source.get("filename") or f"{slugify(voice_name)}_{index:03d}"
         trim_start = int(source.get("trim_start", 0))
         trim_end = int(source.get("trim_end", 0))
+        cache_key = source.get("cache_key") or _source_cache_key(url)
+        force_download = bool(source.get("force_download", False) or config.get("force_download", False))
+        final_wav_path = str(raw_dir / f"{filename}.wav")
 
-        mp3_file = download_youtube_video_to_mp3(url, str(raw_dir))
-        if not mp3_file:
-            raise RuntimeError(f"Failed to download source #{index}: {url}")
-
-        converted = convert_mp3_to_wav(mp3_file, str(raw_dir), filename)
-        if not converted:
-            raise RuntimeError(f"Failed to convert source #{index}: {url}")
-
-        final_wav_path, enhanced_wav_path = converted
-
-        if trim_end > 0:
-            trimmed = trim_wav_file(trim_start, trim_end, enhanced_wav_path, final_wav_path)
-            if not trimmed:
-                raise RuntimeError(f"Failed to trim source #{index}: {url}")
+        cached_source = manifest_index.get(cache_key, {})
+        cached_wav_path = str(cached_source.get("final_wav_path", "")).strip()
+        if not force_download and cached_wav_path and os.path.exists(cached_wav_path):
+            final_wav_path = cached_wav_path
+        elif not force_download and os.path.exists(final_wav_path):
+            pass
         else:
-            os.rename(enhanced_wav_path, final_wav_path)
+            mp3_file = download_youtube_video_to_mp3(url, str(raw_dir))
+            if not mp3_file:
+                raise RuntimeError(f"Failed to download source #{index}: {url}")
+
+            converted = convert_mp3_to_wav(mp3_file, str(raw_dir), filename)
+            if not converted:
+                raise RuntimeError(f"Failed to convert source #{index}: {url}")
+
+            generated_final_wav_path, enhanced_wav_path = converted
+
+            if trim_end > 0:
+                trimmed = trim_wav_file(trim_start, trim_end, enhanced_wav_path, generated_final_wav_path)
+                if not trimmed:
+                    raise RuntimeError(f"Failed to trim source #{index}: {url}")
+                final_wav_path = trimmed
+            else:
+                os.rename(enhanced_wav_path, generated_final_wav_path)
+                final_wav_path = generated_final_wav_path
+
+        manifest_index[cache_key] = {
+            "cache_key": cache_key,
+            "url": url,
+            "filename": filename,
+            "trim_start": trim_start,
+            "trim_end": trim_end,
+            "final_wav_path": final_wav_path,
+        }
 
         rows.append([final_wav_path, voice_name, language])
 
     with open(csv_path, "w", newline="") as csv_file:
         csv.writer(csv_file).writerows(rows)
+
+    _write_json_file(
+        sources_manifest_path,
+        {"sources": [manifest_index[key] for key in sorted(manifest_index.keys())]},
+    )
 
     return csv_path
 
