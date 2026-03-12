@@ -236,6 +236,8 @@ def run_pipeline(config_path: Path) -> None:
         max_text_length=int(train_cfg.get("max_text_chars", 200)),
         mixed_precision=not bool(train_cfg.get("no_mixed_precision", False)),
         precision=str(train_cfg.get("precision", "fp16")),
+        restore_path=train_cfg.get("restore_path"),
+        resume_latest=bool(train_cfg.get("resume_latest", False)),
     )
 
     print("Training finished.")

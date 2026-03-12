@@ -149,6 +149,65 @@ Se quiser treinar sem a curadoria filtrada:
 make train VOICE=beerschool TTS_LANGUAGE=pt
 ```
 
+Observacoes de treino:
+- O treino agora filtra automaticamente linhas com texto acima de `--max-text-chars` (default `180`) e grava CSVs preparados em `.../run/prepared/`.
+- Se usar CLI direto, `--grad-accum` e `--grad-accumm` funcionam como alias.
+- Para continuar um treino anterior, use `--restore-path` (checkpoint especifico) ou `--resume-latest` (ultimo checkpoint encontrado no output).
+
+Exemplo recomendado:
+
+```bash
+python cli.py train \
+  --train-csv outputs/beerschool/dataset/metadata_train_auto.csv \
+  --eval-csv outputs/beerschool/dataset/metadata_eval_auto.csv \
+  --language pt \
+  --epochs 15 \
+  --batch-size 1 \
+  --grad-accum 8 \
+  --max-audio-seconds 11 \
+  --max-text-chars 180 \
+  --output-dir outputs/beerschool/training_test
+```
+
+Exemplos de resume:
+
+```bash
+python cli.py train \
+  --train-csv outputs/beerschool/dataset/metadata_train_auto.csv \
+  --eval-csv outputs/beerschool/dataset/metadata_eval_auto.csv \
+  --output-dir outputs/beerschool/training_test \
+  --resume-latest
+```
+
+```bash
+python cli.py train \
+  --train-csv outputs/beerschool/dataset/metadata_train_auto.csv \
+  --eval-csv outputs/beerschool/dataset/metadata_eval_auto.csv \
+  --output-dir outputs/beerschool/training_test \
+  --restore-path outputs/beerschool/training_test/run/training/GPT_XTTS_FT-<timestamp>/checkpoint_150.pth
+```
+
+### Reports e checkpoint
+
+Resumo de qualidade do dataset:
+
+```bash
+./report.sh outputs/beerschool/dataset
+```
+
+Ranking de checkpoints (tenta usar loss do TensorBoard; fallback para ultimo checkpoint):
+
+```bash
+make checkpoint-report WORKSPACE=outputs/beerschool
+```
+
+Ou por run especifico:
+
+```bash
+python scripts/checkpoint_report.py \
+  --run-dir outputs/beerschool/training_test/run/training/GPT_XTTS_FT-<timestamp>
+```
+
 ### YouTube-first automatico
 
 Para RunPod/Vast, o fluxo mais indicado e usar um arquivo `CONFIG` com varias URLs de YouTube e deixar o pipeline exportar o dataset automatico.

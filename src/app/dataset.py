@@ -1,5 +1,6 @@
 import csv
 import gc
+import importlib.util
 import os
 from pathlib import Path
 from typing import Iterable, Optional, Tuple
@@ -8,6 +9,18 @@ from typing import Iterable, Optional, Tuple
 def clear_gpu_cache(torch_module) -> None:
     if torch_module.cuda.is_available():
         torch_module.cuda.empty_cache()
+
+
+def _disable_hf_transfer_if_unavailable() -> None:
+    if os.environ.get("HF_HUB_ENABLE_HF_TRANSFER") != "1":
+        return
+    if importlib.util.find_spec("hf_transfer") is not None:
+        return
+    os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
+    print(
+        "HF_HUB_ENABLE_HF_TRANSFER=1 but 'hf_transfer' is not installed. "
+        "Falling back to regular Hugging Face download."
+    )
 
 
 def _iter_words(segments: Iterable) -> list:
@@ -516,6 +529,7 @@ def build_dataset(
     os.makedirs(output_dir, exist_ok=True)
     pre_asr_chunks_dir = os.path.join(output_dir, "_pre_asr_chunks")
     os.makedirs(pre_asr_chunks_dir, exist_ok=True)
+    _disable_hf_transfer_if_unavailable()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     print(
         "[dataset] starting build "

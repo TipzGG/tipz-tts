@@ -6,6 +6,41 @@ import cli
 
 
 class CLITest(unittest.TestCase):
+    def test_train_accepts_grad_accum_alias(self):
+        argv = [
+            "cli.py",
+            "train",
+            "--train-csv",
+            "train.csv",
+            "--eval-csv",
+            "eval.csv",
+            "--grad-accum",
+            "8",
+        ]
+        with patch("sys.argv", argv):
+            args = cli.parse_args()
+
+        self.assertEqual(args.command, "train")
+        self.assertEqual(args.grad_accumm, 8)
+
+    def test_train_accepts_resume_args(self):
+        argv = [
+            "cli.py",
+            "train",
+            "--train-csv",
+            "train.csv",
+            "--eval-csv",
+            "eval.csv",
+            "--restore-path",
+            "/tmp/checkpoint_150.pth",
+            "--resume-latest",
+        ]
+        with patch("sys.argv", argv):
+            args = cli.parse_args()
+
+        self.assertEqual(args.restore_path, "/tmp/checkpoint_150.pth")
+        self.assertTrue(args.resume_latest)
+
     def test_infer_dispatch(self):
         argv = [
             "cli.py",

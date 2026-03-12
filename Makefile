@@ -19,7 +19,7 @@ CURATED_CSV ?= $(DATASET_DIR)/metadata_train_curated.csv
 .PHONY: \
 	venv install install-local install-speaker-isolation fix-venv test \
 	pipeline pipeline-youtube-auto print-pipeline-vars import-inputs isolate-speaker build-dataset review-dataset \
-	pipeline-local pipeline-isolated train train-curated infer download enhance serve clean
+	pipeline-local pipeline-isolated train train-curated infer download enhance serve checkpoint-report clean
 
 venv:
 	$(PYTHON) -m venv $(VENV)
@@ -93,11 +93,14 @@ pipeline-isolated:
 
 train:
 	@if [ ! -f "$(TRAIN_CSV)" ] || [ ! -f "$(EVAL_CSV)" ]; then echo "Use: make train TRAIN_CSV=... EVAL_CSV=..."; exit 1; fi
-	$(PY) cli.py train --train-csv $(TRAIN_CSV) --eval-csv $(EVAL_CSV) --language $(TTS_LANGUAGE) --epochs $(or $(EPOCHS),10) --batch-size $(or $(BATCH_SIZE),4) --grad-accumm $(or $(GRAD_ACCUMM),1) --max-audio-seconds $(or $(MAX_AUDIO_SECONDS_TRAIN),11) --max-text-chars $(or $(MAX_TEXT_CHARS),200) --output-dir $(or $(TRAIN_OUTPUT_DIR),$(WORKSPACE)/training)
+	$(PY) cli.py train --train-csv $(TRAIN_CSV) --eval-csv $(EVAL_CSV) --language $(TTS_LANGUAGE) --epochs $(or $(EPOCHS),10) --batch-size $(or $(BATCH_SIZE),4) --grad-accumm $(or $(GRAD_ACCUMM),1) --max-audio-seconds $(or $(MAX_AUDIO_SECONDS_TRAIN),11) --max-text-chars $(or $(MAX_TEXT_CHARS),180) --output-dir $(or $(TRAIN_OUTPUT_DIR),$(WORKSPACE)/training) $(if $(RESTORE_PATH),--restore-path $(RESTORE_PATH),) $(if $(RESUME_LATEST),--resume-latest,)
 
 train-curated:
 	@if [ ! -f "$(CURATED_CSV)" ] || [ ! -f "$(EVAL_CSV)" ]; then echo "Use: make train-curated CURATED_CSV=... EVAL_CSV=..."; exit 1; fi
-	$(PY) cli.py train --train-csv $(CURATED_CSV) --eval-csv $(EVAL_CSV) --language $(TTS_LANGUAGE) --epochs $(or $(EPOCHS),10) --batch-size $(or $(BATCH_SIZE),4) --grad-accumm $(or $(GRAD_ACCUMM),1) --max-audio-seconds $(or $(MAX_AUDIO_SECONDS_TRAIN),11) --max-text-chars $(or $(MAX_TEXT_CHARS),200) --output-dir $(or $(TRAIN_OUTPUT_DIR),$(WORKSPACE)/training)
+	$(PY) cli.py train --train-csv $(CURATED_CSV) --eval-csv $(EVAL_CSV) --language $(TTS_LANGUAGE) --epochs $(or $(EPOCHS),10) --batch-size $(or $(BATCH_SIZE),4) --grad-accumm $(or $(GRAD_ACCUMM),1) --max-audio-seconds $(or $(MAX_AUDIO_SECONDS_TRAIN),11) --max-text-chars $(or $(MAX_TEXT_CHARS),180) --output-dir $(or $(TRAIN_OUTPUT_DIR),$(WORKSPACE)/training) $(if $(RESTORE_PATH),--restore-path $(RESTORE_PATH),) $(if $(RESUME_LATEST),--resume-latest,)
+
+checkpoint-report:
+	$(PY) scripts/checkpoint_report.py --training-dir $(or $(TRAINING_DIR),$(WORKSPACE)/training/run/training) $(if $(RUN_DIR),--run-dir $(RUN_DIR),)
 
 infer:
 	@if [ -z "$(TEXT)" ] || [ -z "$(VOICE_MODEL)" ]; then echo "Use: make infer VOICE_MODEL=silvio TEXT='olá' OUTPUT=out.wav"; exit 1; fi

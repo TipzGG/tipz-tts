@@ -49,12 +49,14 @@ def parse_args() -> argparse.Namespace:
     p_train.add_argument("--language", default="pt")
     p_train.add_argument("--epochs", type=int, default=10)
     p_train.add_argument("--batch-size", type=int, default=4)
-    p_train.add_argument("--grad-accumm", type=int, default=1)
+    p_train.add_argument("--grad-accumm", "--grad-accum", dest="grad_accumm", type=int, default=1)
     p_train.add_argument("--max-audio-seconds", type=int, default=11)
-    p_train.add_argument("--max-text-chars", type=int, default=200)
+    p_train.add_argument("--max-text-chars", type=int, default=180)
     p_train.add_argument("--output-dir", default="out")
     p_train.add_argument("--precision", default="fp16")
     p_train.add_argument("--no-mixed-precision", action="store_true")
+    p_train.add_argument("--restore-path")
+    p_train.add_argument("--resume-latest", action="store_true")
 
     p_infer = subparsers.add_parser("infer", help="Run local inference")
     p_infer.add_argument("--voice-model", required=True)
@@ -172,6 +174,8 @@ def main() -> None:
             max_text_length=args.max_text_chars,
             mixed_precision=not args.no_mixed_precision,
             precision=args.precision,
+            restore_path=args.restore_path,
+            resume_latest=args.resume_latest,
         )
         return
 

@@ -1,6 +1,9 @@
+import csv
 import gc
 import os
-from typing import Tuple
+import re
+from pathlib import Path
+from typing import Optional, Tuple
 
 
 def _csv_has_data_rows(csv_path: str) -> bool:
@@ -19,6 +22,100 @@ def _download_if_missing(model_manager, files: list, output_dir: str) -> None:
         )
 
 
+def _prepare_text_limited_csv(
+    *,
+    source_csv: str,
+    output_dir: str,
+    max_text_length: int,
+    label: str,
+) -> Tuple[str, int, int]:
+    source_path = Path(source_csv)
+    if not source_path.exists():
+        raise FileNotFoundError(f"CSV not found: {source_csv}")
+
+    target_dir = Path(output_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_csv = target_dir / f"{source_path.stem}_{label}_max{max_text_length}.csv"
+
+    kept_rows = []
+    total_rows = 0
+    dropped_rows = 0
+
+    with source_path.open("r", encoding="utf-8", newline="") as file:
+        reader = csv.DictReader(file, delimiter="|")
+        fieldnames = list(reader.fieldnames or [])
+        if not fieldnames:
+            raise RuntimeError(f"CSV header missing: {source_csv}")
+        if "text" not in fieldnames:
+            raise RuntimeError(f"CSV missing 'text' column: {source_csv}")
+
+        for row in reader:
+            total_rows += 1
+            text = str(row.get("text", "")).strip()
+            if len(text) > max_text_length:
+                dropped_rows += 1
+                continue
+            kept_rows.append(row)
+
+    if not kept_rows:
+        raise RuntimeError(
+            f"No rows left after text-length filter in {source_csv} (limit={max_text_length}). "
+            "Increase --max-text-chars or regenerate dataset."
+        )
+
+    with target_csv.open("w", encoding="utf-8", newline="") as file:
+        writer = csv.DictWriter(file, fieldnames=fieldnames, delimiter="|")
+        writer.writeheader()
+        writer.writerows(kept_rows)
+
+    return str(target_csv), dropped_rows, total_rows
+
+
+def _checkpoint_step(path: Path) -> int:
+    match = re.search(r"checkpoint_(\d+)\.pth$", path.name)
+    if not match:
+        return -1
+    return int(match.group(1))
+
+
+def _find_latest_checkpoint(training_output_path: str) -> Optional[str]:
+    training_root = Path(training_output_path).resolve() / "run" / "training"
+    if not training_root.exists():
+        return None
+
+    checkpoint_files = list(training_root.glob("GPT_XTTS_FT-*/checkpoint_*.pth"))
+    checkpoint_files.extend(training_root.glob("checkpoint_*.pth"))
+    if not checkpoint_files:
+        return None
+
+    latest = sorted(checkpoint_files, key=lambda path: (path.stat().st_mtime, _checkpoint_step(path)))[-1]
+    return str(latest)
+
+
+def _resolve_restore_checkpoint(
+    *,
+    output_path: str,
+    restore_path: Optional[str],
+    resume_latest: bool,
+) -> Optional[str]:
+    if restore_path:
+        resolved = str(Path(restore_path).resolve())
+        if not os.path.exists(resolved):
+            raise FileNotFoundError(f"Restore checkpoint not found: {resolved}")
+        return resolved
+
+    if not resume_latest:
+        return None
+
+    latest = _find_latest_checkpoint(output_path)
+    if not latest:
+        raise RuntimeError(
+            "resume_latest enabled but no checkpoint found under "
+            f"{Path(output_path).resolve() / 'run' / 'training'}"
+        )
+    return latest
+
+
 def train_gpt(
     language: str,
     num_epochs: int,
@@ -31,6 +128,8 @@ def train_gpt(
     max_text_length: int = 200,
     mixed_precision: bool = True,
     precision: str = "fp16",
+    restore_path: Optional[str] = None,
+    resume_latest: bool = False,
 ) -> Tuple[str, str, str, str, str]:
     import torch
     from trainer import Trainer, TrainerArgs
@@ -45,6 +144,36 @@ def train_gpt(
 
     if not _csv_has_data_rows(eval_csv):
         print("Warning: eval CSV has no rows. Reusing train CSV for evaluation.")
+        eval_csv = train_csv
+
+    resolved_restore_path = _resolve_restore_checkpoint(
+        output_path=output_path,
+        restore_path=restore_path,
+        resume_latest=resume_latest,
+    )
+    if resolved_restore_path:
+        print(f"[train] resuming from checkpoint: {resolved_restore_path}")
+
+    prepared_csv_dir = os.path.join(output_path, "run", "prepared")
+    train_csv, dropped_train, total_train = _prepare_text_limited_csv(
+        source_csv=train_csv,
+        output_dir=prepared_csv_dir,
+        max_text_length=max_text_length,
+        label="train",
+    )
+    eval_csv, dropped_eval, total_eval = _prepare_text_limited_csv(
+        source_csv=eval_csv,
+        output_dir=prepared_csv_dir,
+        max_text_length=max_text_length,
+        label="eval",
+    )
+    print(
+        f"[train] text-length filter: train dropped {dropped_train}/{total_train}, "
+        f"eval dropped {dropped_eval}/{total_eval}, limit={max_text_length}"
+    )
+
+    if not _csv_has_data_rows(eval_csv):
+        print("Warning: filtered eval CSV has no rows. Reusing filtered train CSV for evaluation.")
         eval_csv = train_csv
 
     out_path = os.path.join(output_path, "run", "training")
@@ -113,7 +242,7 @@ def train_gpt(
         print_step=50,
         plot_step=10**9,
         log_model_step=10**9,
-        save_step=50,
+        save_step=250,
         save_n_checkpoints=1,
         save_checkpoints=True,
         print_eval=False,
@@ -143,7 +272,12 @@ def train_gpt(
 
     model = GPTTrainer.init_from_config(config)
     trainer = Trainer(
-        TrainerArgs(restore_path=None, skip_train_epoch=False, start_with_eval=False, grad_accum_steps=grad_acumm),
+        TrainerArgs(
+            restore_path=resolved_restore_path,
+            skip_train_epoch=False,
+            start_with_eval=False,
+            grad_accum_steps=grad_acumm,
+        ),
         config,
         output_path=out_path,
         dashboard_logger=DummyLogger(),
