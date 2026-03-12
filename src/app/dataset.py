@@ -207,6 +207,8 @@ def _flag_penalty(flag: str) -> int:
         "suspicious_chars": 10,
         "double_spaces": 5,
         "no_terminal_punctuation": 5,
+        "rare_word_ratio_high": 20,
+        "rare_long_word_count_high": 15,
     }
     return penalties.get(flag, 0)
 
@@ -228,6 +230,37 @@ def _score_flags(flags: list[str]) -> int:
     for flag in flags:
         score -= _flag_penalty(flag)
     return max(0, score)
+
+
+def _normalize_token(text: str) -> str:
+    return text.strip(" \t\r\n.,;:!?-_'\"/()[]{}").lower()
+
+
+def _token_frequencies(texts: list[str]) -> dict[str, int]:
+    frequencies: dict[str, int] = {}
+    for text in texts:
+        for token in (_normalize_token(part) for part in text.split()):
+            if len(token) < 3:
+                continue
+            frequencies[token] = frequencies.get(token, 0) + 1
+    return frequencies
+
+
+def _dataset_level_text_flags(text: str, token_frequencies: dict[str, int]) -> list[str]:
+    tokens = [_normalize_token(part) for part in text.split()]
+    informative_tokens = [token for token in tokens if len(token) >= 5]
+    if not informative_tokens:
+        return []
+
+    rare_tokens = [token for token in informative_tokens if token_frequencies.get(token, 0) <= 1]
+    rare_ratio = len(rare_tokens) / len(informative_tokens)
+
+    flags: list[str] = []
+    if len(rare_tokens) >= 2 and rare_ratio >= 0.34:
+        flags.append("rare_word_ratio_high")
+    if len(rare_tokens) >= 4:
+        flags.append("rare_long_word_count_high")
+    return flags
 
 
 def _review_row(
@@ -274,8 +307,6 @@ def _review_row(
         flags.append("double_spaces")
     if not text.endswith((".", "!", "?")):
         flags.append("no_terminal_punctuation")
-    score = _score_flags(flags)
-
     reviewed = dict(row)
     reviewed["audio_path"] = audio_path
     reviewed["duration_seconds"] = round(duration_seconds, 3)
@@ -283,7 +314,6 @@ def _review_row(
     reviewed["word_count"] = word_count
     reviewed["chars_per_second"] = chars_per_second
     reviewed["flags"] = ",".join(flags)
-    reviewed["score"] = score
     reviewed["review_status"] = "review" if flags else "keep"
     return reviewed
 
@@ -323,6 +353,15 @@ def review_dataset(
         )
         for row in dataframe.to_dict(orient="records")
     ]
+    token_frequencies = _token_frequencies([str(row.get("text", "")) for row in reviewed_rows])
+    for row in reviewed_rows:
+        flags = [flag for flag in str(row.get("flags", "")).split(",") if flag]
+        flags.extend(_dataset_level_text_flags(str(row.get("text", "")), token_frequencies))
+        deduped_flags = list(dict.fromkeys(flags))
+        row["flags"] = ",".join(deduped_flags)
+        row["score"] = _score_flags(deduped_flags)
+        row["review_status"] = "review" if deduped_flags else "keep"
+
     reviewed_dataframe = pandas.DataFrame(reviewed_rows).sort_values(["review_status", "audio_file"])
     score_threshold = _status_threshold_for_policy(auto_status_policy)
     reviewed_dataframe["auto_status"] = reviewed_dataframe["score"].apply(

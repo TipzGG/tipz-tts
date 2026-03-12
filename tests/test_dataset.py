@@ -112,7 +112,6 @@ class DatasetTest(unittest.TestCase):
         )
         self.assertEqual(reviewed["review_status"], "keep")
         self.assertEqual(reviewed["flags"], "")
-        self.assertEqual(reviewed["score"], 100)
 
     @patch("src.app.dataset._safe_audio_duration_seconds", return_value=3.0)
     def test_review_dataset_uses_auto_status_policy(self, _mock_duration):
