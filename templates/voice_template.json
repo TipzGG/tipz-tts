@@ -22,8 +22,26 @@
 		"output_dir": "outputs/silvio/dataset",
 		"val_split": 0.15,
 		"buffer_seconds": 0.2,
-		"whisper_model": "large-v2",
-		"compute_type": "float32"
+		"whisper_model": "medium",
+		"compute_type": "float16",
+		"max_segment_seconds": 11.0,
+		"max_text_chars": 200,
+		"pre_asr_max_chunk_seconds": 30,
+		"pre_asr_min_chunk_seconds": 2.0,
+		"pre_asr_min_silence_ms": 600,
+		"pre_asr_keep_silence_ms": 200,
+		"pre_asr_merge_gap_ms": 250,
+		"pre_asr_silence_thresh_db": -40,
+		"auto_curate": {
+			"enabled": true,
+			"policy": "strict",
+			"min_audio_seconds": 1.0,
+			"max_audio_seconds": 12.0,
+			"min_text_chars": 8,
+			"max_text_chars": 180,
+			"min_chars_per_second": 4.0,
+			"max_chars_per_second": 24.0
+		}
 	},
 	"train": {
 		"enabled": false,
@@ -31,6 +49,7 @@
 		"num_epochs": 10,
 		"batch_size": 4,
 		"grad_acumm": 1,
-		"max_audio_seconds": 11
+		"max_audio_seconds": 11,
+		"use_auto_dataset": true
 	}
 }

@@ -12,6 +12,5 @@ soundfile
 yt-dlp
 pydub
 deepfilternet
-pyannote.audio
 pyyaml
 flask

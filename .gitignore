@@ -19,6 +19,7 @@ output/
 out/
 outputs/
 sources/
+inputs/
 
 # Local voice registry with real paths
 config/voices.json

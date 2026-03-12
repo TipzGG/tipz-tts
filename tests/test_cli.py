@@ -1,4 +1,5 @@
 import unittest
+from types import ModuleType
 from unittest.mock import patch
 
 import cli
@@ -18,9 +19,9 @@ class CLITest(unittest.TestCase):
             "--voices-config",
             "templates/voices.json",
         ]
-        with patch("sys.argv", argv), patch("cli.load_voice_registry", return_value={"silvio": {}}), patch(
-            "cli.preload_voices", return_value={"silvio": [1, 2, 3, 0.8, 0.97]}
-        ), patch("cli.synthesize_to_file", return_value="out.wav") as mock_fn:
+        with patch("sys.argv", argv), patch("src.app.profiles.load_voice_registry", return_value={"silvio": {}}), patch(
+            "src.app.profiles.preload_voices", return_value={"silvio": [1, 2, 3, 0.8, 0.97]}
+        ), patch("src.app.inference.synthesize_to_file", return_value="out.wav") as mock_fn:
             cli.main()
 
         mock_fn.assert_called_once()
@@ -37,9 +38,7 @@ class CLITest(unittest.TestCase):
             "silvio",
             "--skip-enhancement",
         ]
-        with patch("sys.argv", argv), patch(
-            "cli.process_inputs_folder", return_value=(["/tmp/a.wav"], "/tmp/data_from_inputs.csv")
-        ) as mock_fn:
+        with patch("sys.argv", argv), patch("src.app.audio.process_inputs_folder", return_value=(["/tmp/a.wav"], "/tmp/data_from_inputs.csv")) as mock_fn:
             cli.main()
 
         mock_fn.assert_called_once()
@@ -57,10 +56,13 @@ class CLITest(unittest.TestCase):
             "beerschool",
             "--allow-overlap",
         ]
-        with patch("sys.argv", argv), patch(
-            "cli.isolate_speaker_from_inputs",
+        stub_module = ModuleType("src.app.speaker_isolation")
+        with patch("sys.argv", argv), patch.object(
+            stub_module,
+            "isolate_speaker_from_inputs",
             return_value=(["/tmp/clip.wav"], "/tmp/data_from_isolated_speaker.csv"),
-        ) as mock_fn:
+            create=True,
+        ) as mock_fn, patch.dict("sys.modules", {"src.app.speaker_isolation": stub_module}):
             cli.main()
 
         mock_fn.assert_called_once()

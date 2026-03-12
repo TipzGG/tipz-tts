@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from src.app.audio import convert_mp3_to_wav, download_youtube_video_to_mp3, trim_wav_file
-from src.app.dataset import build_dataset
+from src.app.dataset import auto_curate_dataset_splits, build_dataset
 from src.app.training import train_gpt
 
 
@@ -108,11 +108,40 @@ def run_pipeline(config_path: Path) -> None:
         buffer_seconds=float(dataset_cfg.get("buffer_seconds", 0.2)),
         whisper_model_size=dataset_cfg.get("whisper_model", "large-v2"),
         compute_type=dataset_cfg.get("compute_type", "float32"),
+        max_segment_seconds=float(dataset_cfg.get("max_segment_seconds", 11.0)),
+        max_text_chars=int(dataset_cfg.get("max_text_chars", 200)),
+        pre_asr_max_chunk_seconds=float(dataset_cfg.get("pre_asr_max_chunk_seconds", 45.0)),
+        pre_asr_min_chunk_seconds=float(dataset_cfg.get("pre_asr_min_chunk_seconds", 2.0)),
+        pre_asr_min_silence_ms=int(dataset_cfg.get("pre_asr_min_silence_ms", 700)),
+        pre_asr_keep_silence_ms=int(dataset_cfg.get("pre_asr_keep_silence_ms", 200)),
+        pre_asr_merge_gap_ms=int(dataset_cfg.get("pre_asr_merge_gap_ms", 250)),
+        pre_asr_silence_thresh_db=int(dataset_cfg.get("pre_asr_silence_thresh_db", -40)),
     )
 
     print(f"Dataset ready: {dataset_output_dir}")
     print(f"Train CSV: {train_csv}")
     print(f"Eval CSV: {eval_csv}")
+
+    auto_cfg = dataset_cfg.get("auto_curate", {})
+    auto_curate_enabled = bool(auto_cfg.get("enabled", True))
+    auto_outputs = None
+    if auto_curate_enabled:
+        auto_outputs = auto_curate_dataset_splits(
+            train_csv=train_csv,
+            eval_csv=eval_csv,
+            output_dir=str(dataset_output_dir),
+            policy=str(auto_cfg.get("policy", "strict")),
+            min_audio_seconds=float(auto_cfg.get("min_audio_seconds", 1.0)),
+            max_audio_seconds=float(auto_cfg.get("max_audio_seconds", 12.0)),
+            min_text_chars=int(auto_cfg.get("min_text_chars", 8)),
+            max_text_chars=int(auto_cfg.get("max_text_chars", 180)),
+            min_chars_per_second=float(auto_cfg.get("min_chars_per_second", 4.0)),
+            max_chars_per_second=float(auto_cfg.get("max_chars_per_second", 24.0)),
+        )
+        print(f"Train scored CSV: {auto_outputs['train_scored_csv']}")
+        print(f"Eval scored CSV: {auto_outputs['eval_scored_csv']}")
+        print(f"Train auto CSV: {auto_outputs['train_auto_csv']}")
+        print(f"Eval auto CSV: {auto_outputs['eval_auto_csv']}")
 
     train_cfg = config.get("train", {})
     if not train_cfg.get("enabled", False):
@@ -120,15 +149,24 @@ def run_pipeline(config_path: Path) -> None:
         return
 
     max_audio_seconds = int(train_cfg.get("max_audio_seconds", 11))
+    selected_train_csv = train_csv
+    selected_eval_csv = eval_csv
+    if auto_outputs and bool(train_cfg.get("use_auto_dataset", True)):
+        selected_train_csv = auto_outputs["train_auto_csv"]
+        selected_eval_csv = auto_outputs["eval_auto_csv"]
+
     train_gpt(
         language=language,
         num_epochs=int(train_cfg.get("num_epochs", 10)),
         batch_size=int(train_cfg.get("batch_size", 4)),
         grad_acumm=int(train_cfg.get("grad_acumm", 1)),
-        train_csv=train_csv,
-        eval_csv=eval_csv,
+        train_csv=selected_train_csv,
+        eval_csv=selected_eval_csv,
         output_path=train_cfg.get("output_dir", str(workspace_dir / "training")),
         max_audio_length=int(max_audio_seconds * 22050),
+        max_text_length=int(train_cfg.get("max_text_chars", 200)),
+        mixed_precision=not bool(train_cfg.get("no_mixed_precision", False)),
+        precision=str(train_cfg.get("precision", "fp16")),
     )
 
     print("Training finished.")

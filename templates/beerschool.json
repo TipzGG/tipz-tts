@@ -12,5 +12,16 @@
       "url": "https://www.youtube.com/watch?v=YgRnFiAK4Ec"
     }
   ],
-  "train": { "enabled": false, "max_audio_seconds": 11 }
+  "dataset": {
+    "output_dir": "outputs/beerschool/dataset",
+    "whisper_model": "medium",
+    "compute_type": "float16",
+    "pre_asr_max_chunk_seconds": 30,
+    "pre_asr_min_silence_ms": 600,
+    "auto_curate": {
+      "enabled": true,
+      "policy": "strict"
+    }
+  },
+  "train": { "enabled": false, "max_audio_seconds": 11, "use_auto_dataset": true }
 }

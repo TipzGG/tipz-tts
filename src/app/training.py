@@ -28,8 +28,13 @@ def train_gpt(
     eval_csv: str,
     output_path: str,
     max_audio_length: int = 255995,
+    max_text_length: int = 200,
+    mixed_precision: bool = True,
+    precision: str = "fp16",
 ) -> Tuple[str, str, str, str, str]:
+    import torch
     from trainer import Trainer, TrainerArgs
+    from trainer.logging.dummy_logger import DummyLogger
 
     from TTS.config.shared_configs import BaseDatasetConfig
     from TTS.tts.configs.xtts_config import XttsAudioConfig
@@ -57,6 +62,9 @@ def train_gpt(
     _download_if_missing(ModelManager, [dvae_checkpoint, mel_norm_file], checkpoints_out_path)
     _download_if_missing(ModelManager, [tokenizer_file, xtts_checkpoint, xtts_config_file], checkpoints_out_path)
 
+    max_conditioning_length = min(int(4 * 22050), max_audio_length)
+    min_conditioning_length = min(int(2 * 22050), max_conditioning_length)
+
     dataset_config = BaseDatasetConfig(
         formatter="coqui",
         dataset_name="ft_dataset",
@@ -67,11 +75,11 @@ def train_gpt(
     )
 
     model_args = GPTArgs(
-        max_conditioning_length=132300,
-        min_conditioning_length=66150,
+        max_conditioning_length=max_conditioning_length,
+        min_conditioning_length=min_conditioning_length,
         debug_loading_failures=False,
         max_wav_length=max_audio_length,
-        max_text_length=200,
+        max_text_length=max_text_length,
         mel_norm_file=mel_norm_file,
         dvae_checkpoint=dvae_checkpoint,
         xtts_checkpoint=xtts_checkpoint,
@@ -84,6 +92,9 @@ def train_gpt(
     )
 
     config = GPTTrainerConfig(
+        mixed_precision=bool(mixed_precision and torch.cuda.is_available()),
+        precision=precision if torch.cuda.is_available() else "fp32",
+        use_grad_scaler=bool(mixed_precision and torch.cuda.is_available()),
         epochs=num_epochs,
         output_path=out_path,
         model_args=model_args,
@@ -96,22 +107,26 @@ def train_gpt(
         batch_size=batch_size,
         batch_group_size=48,
         eval_batch_size=batch_size,
-        num_loader_workers=8,
+        num_loader_workers=2,
+        num_eval_loader_workers=2,
         eval_split_max_size=256,
         print_step=50,
-        plot_step=100,
-        log_model_step=100,
-        save_step=1000,
+        plot_step=10**9,
+        log_model_step=10**9,
+        save_step=50,
         save_n_checkpoints=1,
         save_checkpoints=True,
         print_eval=False,
+        run_eval=False,
         optimizer="AdamW",
         optimizer_wd_only_on_weights=True,
-        optimizer_params={"betas": [0.9, 0.96], "eps": 1e-8, "weight_decay": 1e-2},
+        optimizer_params={"betas": [0.9, 0.96], "eps": 1e-8, "weight_decay": 1e-2, "foreach": False},
         lr=5e-06,
         lr_scheduler="MultiStepLR",
         lr_scheduler_params={"milestones": [50000 * 18, 150000 * 18, 300000 * 18], "gamma": 0.5, "last_epoch": -1},
         test_sentences=[],
+        max_text_len=max_text_length,
+        max_audio_len=max_audio_length,
     )
 
     train_samples, eval_samples = load_tts_samples(
@@ -131,10 +146,12 @@ def train_gpt(
         TrainerArgs(restore_path=None, skip_train_epoch=False, start_with_eval=False, grad_accum_steps=grad_acumm),
         config,
         output_path=out_path,
+        dashboard_logger=DummyLogger(),
         model=model,
         train_samples=train_samples,
         eval_samples=eval_samples,
     )
+    trainer.update_training_dashboard_logger = lambda *args, **kwargs: None
     trainer.fit()
 
     sample_lengths = [len(item["text"].split(" ")) for item in train_samples]

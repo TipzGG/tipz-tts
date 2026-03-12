@@ -1,13 +1,5 @@
 import argparse
 
-from src.app.audio import enhance_audio_file, process_inputs_folder, process_single_source
-from src.app.dataset import build_dataset
-from src.app.inference import synthesize_to_file
-from src.app.pipeline import run_pipeline
-from src.app.profiles import load_voice_registry, preload_voices
-from src.app.speaker_isolation import isolate_speaker_from_inputs
-from src.app.training import train_gpt
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="tipz-tts CLI")
@@ -31,6 +23,25 @@ def parse_args() -> argparse.Namespace:
     p_dataset.add_argument("--buffer-seconds", type=float, default=0.2)
     p_dataset.add_argument("--whisper-model", default="large-v2")
     p_dataset.add_argument("--compute-type", default="float32")
+    p_dataset.add_argument("--max-segment-seconds", type=float, default=11.0)
+    p_dataset.add_argument("--max-text-chars", type=int, default=200)
+    p_dataset.add_argument("--pre-asr-max-chunk-seconds", type=float, default=45.0)
+    p_dataset.add_argument("--pre-asr-min-chunk-seconds", type=float, default=2.0)
+    p_dataset.add_argument("--pre-asr-min-silence-ms", type=int, default=700)
+    p_dataset.add_argument("--pre-asr-keep-silence-ms", type=int, default=200)
+    p_dataset.add_argument("--pre-asr-merge-gap-ms", type=int, default=250)
+    p_dataset.add_argument("--pre-asr-silence-thresh-db", type=int, default=-40)
+
+    p_review_dataset = subparsers.add_parser("review-dataset", help="Flag suspicious dataset rows for manual curation")
+    p_review_dataset.add_argument("--metadata-csv", required=True)
+    p_review_dataset.add_argument("--output-csv")
+    p_review_dataset.add_argument("--filtered-output-csv")
+    p_review_dataset.add_argument("--min-audio-seconds", type=float, default=1.0)
+    p_review_dataset.add_argument("--max-audio-seconds", type=float, default=12.0)
+    p_review_dataset.add_argument("--min-text-chars", type=int, default=8)
+    p_review_dataset.add_argument("--max-text-chars", type=int, default=180)
+    p_review_dataset.add_argument("--min-chars-per-second", type=float, default=4.0)
+    p_review_dataset.add_argument("--max-chars-per-second", type=float, default=24.0)
 
     p_train = subparsers.add_parser("train", help="Train XTTS")
     p_train.add_argument("--train-csv", required=True)
@@ -40,7 +51,10 @@ def parse_args() -> argparse.Namespace:
     p_train.add_argument("--batch-size", type=int, default=4)
     p_train.add_argument("--grad-accumm", type=int, default=1)
     p_train.add_argument("--max-audio-seconds", type=int, default=11)
+    p_train.add_argument("--max-text-chars", type=int, default=200)
     p_train.add_argument("--output-dir", default="out")
+    p_train.add_argument("--precision", default="fp16")
+    p_train.add_argument("--no-mixed-precision", action="store_true")
 
     p_infer = subparsers.add_parser("infer", help="Run local inference")
     p_infer.add_argument("--voice-model", required=True)
@@ -82,6 +96,8 @@ def main() -> None:
     args = parse_args()
 
     if args.command == "download":
+        from src.app.audio import process_single_source
+
         result = process_single_source(
             url=args.url,
             filename=args.filename,
@@ -93,11 +109,15 @@ def main() -> None:
         return
 
     if args.command == "enhance":
+        from src.app.audio import enhance_audio_file
+
         result = enhance_audio_file(args.input, args.output)
         print(f"Saved enhanced audio: {result}")
         return
 
     if args.command == "dataset":
+        from src.app.dataset import build_dataset
+
         train_csv, eval_csv = build_dataset(
             base_dataset=args.input_csv,
             output_dir=args.output_dir,
@@ -105,12 +125,41 @@ def main() -> None:
             buffer_seconds=args.buffer_seconds,
             whisper_model_size=args.whisper_model,
             compute_type=args.compute_type,
+            max_segment_seconds=args.max_segment_seconds,
+            max_text_chars=args.max_text_chars,
+            pre_asr_max_chunk_seconds=args.pre_asr_max_chunk_seconds,
+            pre_asr_min_chunk_seconds=args.pre_asr_min_chunk_seconds,
+            pre_asr_min_silence_ms=args.pre_asr_min_silence_ms,
+            pre_asr_keep_silence_ms=args.pre_asr_keep_silence_ms,
+            pre_asr_merge_gap_ms=args.pre_asr_merge_gap_ms,
+            pre_asr_silence_thresh_db=args.pre_asr_silence_thresh_db,
         )
         print(f"Train metadata: {train_csv}")
         print(f"Eval metadata: {eval_csv}")
         return
 
+    if args.command == "review-dataset":
+        from src.app.dataset import review_dataset
+
+        review_csv, filtered_csv = review_dataset(
+            metadata_csv=args.metadata_csv,
+            output_csv=args.output_csv,
+            filtered_output_csv=args.filtered_output_csv,
+            min_audio_seconds=args.min_audio_seconds,
+            max_audio_seconds=args.max_audio_seconds,
+            min_text_chars=args.min_text_chars,
+            max_text_chars=args.max_text_chars,
+            min_chars_per_second=args.min_chars_per_second,
+            max_chars_per_second=args.max_chars_per_second,
+        )
+        print(f"Review metadata: {review_csv}")
+        if filtered_csv:
+            print(f"Filtered metadata: {filtered_csv}")
+        return
+
     if args.command == "train":
+        from src.app.training import train_gpt
+
         train_gpt(
             language=args.language,
             num_epochs=args.epochs,
@@ -120,10 +169,16 @@ def main() -> None:
             eval_csv=args.eval_csv,
             output_path=args.output_dir,
             max_audio_length=int(args.max_audio_seconds * 22050),
+            max_text_length=args.max_text_chars,
+            mixed_precision=not args.no_mixed_precision,
+            precision=args.precision,
         )
         return
 
     if args.command == "infer":
+        from src.app.inference import synthesize_to_file
+        from src.app.profiles import load_voice_registry, preload_voices
+
         registry = load_voice_registry(args.voices_config)
         cache = preload_voices(registry)
 
@@ -142,11 +197,14 @@ def main() -> None:
 
     if args.command == "pipeline":
         from pathlib import Path
+        from src.app.pipeline import run_pipeline
 
         run_pipeline(Path(args.config).resolve())
         return
 
     if args.command == "import-inputs":
+        from src.app.audio import process_inputs_folder
+
         processed_files, csv_path = process_inputs_folder(
             input_dir=args.input_dir,
             output_folder=args.output_folder,
@@ -161,6 +219,8 @@ def main() -> None:
         return
 
     if args.command == "isolate-speaker":
+        from src.app.speaker_isolation import isolate_speaker_from_inputs
+
         generated_files, csv_path = isolate_speaker_from_inputs(
             input_dir=args.input_dir,
             output_dir=args.output_dir,

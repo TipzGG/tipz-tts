@@ -12,6 +12,16 @@ class AudioDownloadError(RuntimeError):
     pass
 
 
+def _ensure_ffmpeg_tools() -> None:
+    missing = [tool for tool in ("ffmpeg", "ffprobe") if shutil.which(tool) is None]
+    if missing:
+        raise RuntimeError(
+            "Missing system dependency: "
+            + ", ".join(missing)
+            + ". Install FFmpeg so pydub can read audio files."
+        )
+
+
 def _ensure_torchaudio_backend_compat() -> None:
     import torchaudio
 
@@ -54,6 +64,7 @@ def _ensure_torchaudio_backend_compat() -> None:
 def trim_wav_file(start_seconds: int, end_seconds: int, source_wav: str, target_wav: str) -> str:
     from pydub import AudioSegment
 
+    _ensure_ffmpeg_tools()
     audio = AudioSegment.from_wav(source_wav)
     trimmed_audio = audio[start_seconds * 1000 : end_seconds * 1000]
     trimmed_audio.export(target_wav, format="wav")
@@ -113,6 +124,7 @@ def convert_mp3_to_wav(mp3_file: str, output_path: str = ".", filename: str = "o
     from pydub import AudioSegment
 
     try:
+        _ensure_ffmpeg_tools()
         original_wav = os.path.join(output_path, f"{filename}.wav")
         enhanced_wav = os.path.join(output_path, f"{filename}_enh.wav")
         preview_wav = os.path.join(output_path, f"{filename}_prev.wav")
@@ -168,6 +180,7 @@ def process_local_source(
 ) -> str:
     from pydub import AudioSegment
 
+    _ensure_ffmpeg_tools()
     input_path = Path(input_file)
     if not input_path.exists():
         raise FileNotFoundError(f"Input file not found: {input_file}")

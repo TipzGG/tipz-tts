@@ -24,6 +24,15 @@ class PipelineTest(unittest.TestCase):
             with patch("src.app.pipeline.load_config", return_value=config), patch(
                 "src.app.pipeline.download_sources", return_value=Path(tmp) / "data.csv"
             ), patch("src.app.pipeline.build_dataset", return_value=("/tmp/train.csv", "/tmp/eval.csv")), patch(
+                "src.app.pipeline.auto_curate_dataset_splits",
+                return_value={
+                    "train_scored_csv": "/tmp/train_scored.csv",
+                    "eval_scored_csv": "/tmp/eval_scored.csv",
+                    "train_auto_csv": "/tmp/train_auto.csv",
+                    "eval_auto_csv": "/tmp/eval_auto.csv",
+                    "policy": "strict",
+                },
+            ), patch(
                 "src.app.pipeline.train_gpt"
             ) as train_mock:
                 run_pipeline(cfg_path)

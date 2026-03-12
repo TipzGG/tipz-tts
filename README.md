@@ -16,7 +16,19 @@ Projeto com treino/pipeline offline via `cli.py` e API HTTP online apenas para s
 ## Setup
 
 ```bash
+python3.11 --version
 ./scripts/setup_venv.sh
+source .venv/bin/activate
+```
+
+Observacao: este projeto requer Python `3.11` por causa das dependencias `trainer`/`coqui-tts`.
+O ambiente base nao instala `pyannote.audio`; ele ficou opcional porque o resolver do `pip` pode estourar profundidade ao tentar fechar toda a arvore junto com o resto do stack.
+O setup remove automaticamente o pacote legado `coqpit` e reinstala `coqpit-config`, para evitar conflito com `coqui-tts`.
+
+Atalho para outra maquina:
+
+```bash
+./install.sh
 source .venv/bin/activate
 ```
 
@@ -52,8 +64,171 @@ cp config/voices.example.json config/voices.json
 python cli.py pipeline --config templates/voice_template.json
 python cli.py import-inputs --input-dir inputs --output-folder outputs/local --speaker silvio --skip-enhancement
 python cli.py isolate-speaker --input-dir inputs --output-dir outputs/isolated --speaker silvio --reference-audio inputs/ref.wav
+python cli.py review-dataset --metadata-csv output/metadata_train.csv --filtered-output-csv output/metadata_train_curated.csv
 python cli.py train --train-csv output/metadata_train.csv --eval-csv output/metadata_eval.csv
 python cli.py infer --voice-model silvio --text "Olá" --output output.wav --voices-config config/voices.json
+```
+
+## Pipelines via Makefile
+
+O `Makefile` agora expõe dois fluxos agnosticos por voz:
+
+- `pipeline-local`: para audio com um speaker principal, sem diarizacao
+- `pipeline-isolated`: para audio com multiplas vozes, usando diarizacao + selecao do speaker alvo
+- `pipeline-youtube-auto`: para multiplos videos do YouTube via arquivo de config, com dataset automatico e sem revisao manual
+
+Variaveis principais:
+
+- `VOICE`: nome logico da voz
+- `INPUT_DIR`: pasta com os audios brutos
+- `WORKSPACE`: pasta de saida da voz
+- `TTS_LANGUAGE`: idioma do speaker
+
+Inspecionar defaults:
+
+```bash
+make print-pipeline-vars VOICE=beerschool
+```
+
+### Fluxo 1: audio direto
+
+Importa os arquivos locais, melhora o audio, gera dataset e cria uma revisao automatica para curadoria.
+
+```bash
+make pipeline-local VOICE=beerschool INPUT_DIR=inputs/beerschool TTS_LANGUAGE=pt
+```
+
+Saidas principais:
+
+- `outputs/beerschool/raw/data_from_inputs.csv`
+- `outputs/beerschool/dataset/metadata_train.csv`
+- `outputs/beerschool/dataset/metadata_eval.csv`
+- `outputs/beerschool/dataset/metadata_train_review.csv`
+- `outputs/beerschool/dataset/metadata_train_curated.csv`
+
+### Fluxo 2: isolamento de speaker
+
+Use quando o audio tiver mais de uma pessoa falando.
+
+Instale antes:
+
+```bash
+make install-speaker-isolation
+```
+
+Exemplo com audio de referencia:
+
+```bash
+make pipeline-isolated \
+  VOICE=beerschool \
+  INPUT_DIR=inputs/beerschool \
+  TTS_LANGUAGE=pt \
+  REFERENCE_AUDIO=inputs/beerschool_ref.wav \
+  HF_TOKEN=seu_token
+```
+
+Saidas principais:
+
+- `outputs/beerschool/isolated/data_from_isolated_speaker.csv`
+- `outputs/beerschool/dataset/metadata_train.csv`
+- `outputs/beerschool/dataset/metadata_eval.csv`
+- `outputs/beerschool/dataset/metadata_train_review.csv`
+- `outputs/beerschool/dataset/metadata_train_curated.csv`
+
+### Curadoria e treino
+
+Depois de revisar o `metadata_train_review.csv`, treine com o dataset curado:
+
+```bash
+make train-curated VOICE=beerschool TTS_LANGUAGE=pt
+```
+
+Se quiser treinar sem a curadoria filtrada:
+
+```bash
+make train VOICE=beerschool TTS_LANGUAGE=pt
+```
+
+### YouTube-first automatico
+
+Para RunPod/Vast, o fluxo mais indicado e usar um arquivo `CONFIG` com varias URLs de YouTube e deixar o pipeline exportar o dataset automatico.
+
+Exemplo:
+
+```bash
+make pipeline-youtube-auto CONFIG=templates/beerschool.json
+```
+
+Esse fluxo:
+- baixa varias fontes de YouTube
+- converte para WAV
+- faz chunking pre-ASR
+- gera `metadata_train.csv` e `metadata_eval.csv`
+- pontua cada chunk automaticamente
+- exporta `metadata_train_auto.csv` e `metadata_eval_auto.csv`
+
+Arquivos principais:
+- `metadata_train_scored.csv`
+- `metadata_eval_scored.csv`
+- `metadata_train_auto.csv`
+- `metadata_eval_auto.csv`
+
+Configuracao relevante no `CONFIG`:
+- `sources`: lista de videos do YouTube
+- `dataset.whisper_model`
+- `dataset.compute_type`
+- `dataset.pre_asr_*`
+- `dataset.auto_curate.policy`
+- `train.use_auto_dataset`
+
+### Curadoria do dataset
+
+Depois de gerar `metadata_train.csv`, rode uma revisao automatica para localizar trechos suspeitos:
+
+```bash
+python cli.py review-dataset \
+  --metadata-csv outputs/dataset/beerschool/metadata_train.csv \
+  --filtered-output-csv outputs/dataset/beerschool/metadata_train_curated.csv
+```
+
+Saidas:
+- `*_review.csv`: adiciona `duration_seconds`, `chars_per_second`, `flags` e `review_status`
+- `*_curated.csv`: exporta apenas linhas marcadas automaticamente como `keep`
+
+Flags uteis para revisao manual:
+- `audio_too_short` / `audio_too_long`
+- `text_too_short` / `text_too_long`
+- `chars_per_second_low` / `chars_per_second_high`
+- `ellipsis`, `many_commas`, `filler_words`, `suspicious_chars`
+- `no_terminal_punctuation`
+
+Fluxo recomendado:
+- abra primeiro o `*_review.csv`
+- corrija ou remova linhas marcadas como `review`
+- use o `*_curated.csv` como base inicial para um treino mais limpo
+
+### Chunking pre-ASR
+
+O passo `dataset` agora quebra arquivos longos em chunks de fala antes de rodar o Whisper. Isso reduz uso de memoria e melhora a estabilidade em maquinas locais e cloud.
+
+Parametros mais uteis:
+
+- `--pre-asr-max-chunk-seconds`: tamanho maximo de cada bloco antes do ASR
+- `--pre-asr-min-chunk-seconds`: descarta blocos pequenos demais
+- `--pre-asr-min-silence-ms`: duracao minima de silencio para separar fala
+- `--pre-asr-keep-silence-ms`: margem mantida nas bordas de cada bloco
+- `--pre-asr-merge-gap-ms`: junta blocos de fala muito proximos
+- `--pre-asr-silence-thresh-db`: limiar de silencio do detector
+
+Exemplo:
+
+```bash
+python cli.py dataset \
+  --input-csv outputs/beerschool/raw/data_from_inputs.csv \
+  --output-dir outputs/beerschool/dataset \
+  --whisper-model medium \
+  --pre-asr-max-chunk-seconds 30 \
+  --pre-asr-min-silence-ms 600
 ```
 
 ### Isolar speaker (quando ha mais de uma pessoa falando)
@@ -61,7 +236,7 @@ python cli.py infer --voice-model silvio --text "Olá" --output output.wav --voi
 Instale antes:
 
 ```bash
-python -m pip install pyannote.audio
+python -m pip install -r requirements-speaker-isolation.txt
 ```
 
 Exemplo:
