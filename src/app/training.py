@@ -55,6 +55,10 @@ def _prepare_text_limited_csv(
             if len(text) > max_text_length:
                 dropped_rows += 1
                 continue
+            # Keep prepared CSV portable even if it is written outside dataset dir.
+            audio_file = str(row.get("audio_file", "")).strip()
+            if audio_file and not os.path.isabs(audio_file):
+                row["audio_file"] = str((source_path.parent / audio_file).resolve())
             kept_rows.append(row)
 
     if not kept_rows:
@@ -130,6 +134,12 @@ def train_gpt(
     precision: str = "fp16",
     restore_path: Optional[str] = None,
     resume_latest: bool = False,
+    batch_group_size: int = 48,
+    num_loader_workers: int = 2,
+    num_eval_loader_workers: int = 2,
+    save_step: int = 250,
+    plot_step: int = 10**9,
+    log_model_step: int = 10**9,
 ) -> Tuple[str, str, str, str, str]:
     import torch
     from trainer import Trainer, TrainerArgs
@@ -234,15 +244,15 @@ def train_gpt(
         logger_uri=None,
         audio=XttsAudioConfig(sample_rate=22050, dvae_sample_rate=22050, output_sample_rate=16000),
         batch_size=batch_size,
-        batch_group_size=48,
+        batch_group_size=batch_group_size,
         eval_batch_size=batch_size,
-        num_loader_workers=2,
-        num_eval_loader_workers=2,
+        num_loader_workers=num_loader_workers,
+        num_eval_loader_workers=num_eval_loader_workers,
         eval_split_max_size=256,
         print_step=50,
-        plot_step=10**9,
-        log_model_step=10**9,
-        save_step=250,
+        plot_step=plot_step,
+        log_model_step=log_model_step,
+        save_step=save_step,
         save_n_checkpoints=1,
         save_checkpoints=True,
         print_eval=False,

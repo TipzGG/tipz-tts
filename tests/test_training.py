@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+import csv
 from pathlib import Path
 
 from src.app.training import _prepare_text_limited_csv, _resolve_restore_checkpoint
@@ -29,6 +30,9 @@ class TrainingTest(unittest.TestCase):
             self.assertEqual(total, 2)
             rows = Path(filtered_csv).read_text(encoding="utf-8").strip().splitlines()
             self.assertEqual(len(rows), 2)
+            with Path(filtered_csv).open("r", encoding="utf-8") as file:
+                parsed = list(csv.DictReader(file, delimiter="|"))
+            self.assertTrue(Path(parsed[0]["audio_file"]).is_absolute())
 
     def test_prepare_text_limited_csv_raises_when_all_rows_dropped(self):
         with tempfile.TemporaryDirectory() as tmp:

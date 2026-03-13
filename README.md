@@ -151,6 +151,7 @@ make train VOICE=beerschool TTS_LANGUAGE=pt
 
 Observacoes de treino:
 - O treino agora filtra automaticamente linhas com texto acima de `--max-text-chars` (default `180`) e grava CSVs preparados em `.../run/prepared/`.
+- O CSV preparado converte `audio_file` relativo para path absoluto automaticamente (nao precisa symlink manual de `wavs/`).
 - Se usar CLI direto, `--grad-accum` e `--grad-accumm` funcionam como alias.
 - Para continuar um treino anterior, use `--restore-path` (checkpoint especifico) ou `--resume-latest` (ultimo checkpoint encontrado no output).
 
@@ -185,6 +186,16 @@ python cli.py train \
   --eval-csv outputs/beerschool/dataset/metadata_eval_auto.csv \
   --output-dir outputs/beerschool/training_test \
   --restore-path outputs/beerschool/training_test/run/training/GPT_XTTS_FT-<timestamp>/checkpoint_150.pth
+```
+
+Treino estilo "friend script" (defaults proximos do script classico do Coqui):
+
+```bash
+make train-friend \
+  VOICE=beerschool \
+  TRAIN_CSV=outputs/beerschool/dataset/metadata_train_curated.csv \
+  EVAL_CSV=outputs/beerschool/dataset/metadata_eval.csv \
+  TRAIN_OUTPUT_DIR=outputs/beerschool/training_friend
 ```
 
 ### Reports e checkpoint
