@@ -151,7 +151,7 @@ make train VOICE=beerschool TTS_LANGUAGE=pt
 
 Observacoes de treino:
 - O treino agora filtra automaticamente linhas com texto acima de `--max-text-chars` (default `180`) e grava CSVs preparados em `.../run/prepared/`.
-- O CSV preparado converte `audio_file` relativo para path absoluto automaticamente (nao precisa symlink manual de `wavs/`).
+- O CSV preparado e salvo ao lado do CSV original para manter compatibilidade com paths relativos de `audio_file`.
 - Se usar CLI direto, `--grad-accum` e `--grad-accumm` funcionam como alias.
 - Para continuar um treino anterior, use `--restore-path` (checkpoint especifico) ou `--resume-latest` (ultimo checkpoint encontrado no output).
 

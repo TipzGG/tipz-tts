@@ -32,7 +32,7 @@ class TrainingTest(unittest.TestCase):
             self.assertEqual(len(rows), 2)
             with Path(filtered_csv).open("r", encoding="utf-8") as file:
                 parsed = list(csv.DictReader(file, delimiter="|"))
-            self.assertTrue(Path(parsed[0]["audio_file"]).is_absolute())
+            self.assertEqual(parsed[0]["audio_file"], "wavs/a.wav")
 
     def test_prepare_text_limited_csv_raises_when_all_rows_dropped(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -55,10 +55,6 @@ def _prepare_text_limited_csv(
             if len(text) > max_text_length:
                 dropped_rows += 1
                 continue
-            # Keep prepared CSV portable even if it is written outside dataset dir.
-            audio_file = str(row.get("audio_file", "")).strip()
-            if audio_file and not os.path.isabs(audio_file):
-                row["audio_file"] = str((source_path.parent / audio_file).resolve())
             kept_rows.append(row)
 
     if not kept_rows:
@@ -164,16 +160,17 @@ def train_gpt(
     if resolved_restore_path:
         print(f"[train] resuming from checkpoint: {resolved_restore_path}")
 
-    prepared_csv_dir = os.path.join(output_path, "run", "prepared")
+    prepared_train_csv_dir = str(Path(train_csv).resolve().parent)
+    prepared_eval_csv_dir = str(Path(eval_csv).resolve().parent)
     train_csv, dropped_train, total_train = _prepare_text_limited_csv(
         source_csv=train_csv,
-        output_dir=prepared_csv_dir,
+        output_dir=prepared_train_csv_dir,
         max_text_length=max_text_length,
         label="train",
     )
     eval_csv, dropped_eval, total_eval = _prepare_text_limited_csv(
         source_csv=eval_csv,
-        output_dir=prepared_csv_dir,
+        output_dir=prepared_eval_csv_dir,
         max_text_length=max_text_length,
         label="eval",
     )
